@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { @apply min-h-screen bg-navy text-slate-100 antialiased; }
+  button, input, select { font: inherit; }
+  * { scrollbar-color: #365778 #0d2747; }
+}
+
+@layer components {
+  .surface { @apply rounded-2xl border border-slate-700/70 bg-panel/80 shadow-glow backdrop-blur; }
+  .page-title { @apply text-2xl font-bold tracking-tight text-white sm:text-3xl; }
+  .muted { @apply text-sm text-slate-400; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

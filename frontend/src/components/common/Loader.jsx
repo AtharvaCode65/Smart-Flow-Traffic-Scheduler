@@ -1,0 +1,1 @@
+export default function Loader({ label = 'Loading traffic data…' }) { return <div role="status" className="flex items-center justify-center gap-3 py-12 text-slate-300"><span className="h-6 w-6 animate-spin rounded-full border-2 border-blue border-t-transparent" />{label}</div>; }

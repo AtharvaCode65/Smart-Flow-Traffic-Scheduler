@@ -1,0 +1,5 @@
+import { Link } from 'react-router-dom';
+
+export default function Footer() {
+  return <footer className="border-t border-slate-800 bg-[#061427] px-5 py-8"><div className="mx-auto grid max-w-7xl gap-6 text-sm md:grid-cols-3"><div><p className="font-bold text-white">SmartFlow</p><p className="mt-2 max-w-sm text-slate-400">A college project exploring queue-aware adaptive traffic signal scheduling.</p></div><div><p className="font-semibold text-slate-200">Navigate</p><div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-slate-400"><Link to="/">Home</Link><Link to="/#features">Features</Link><Link to="/#how-it-works">How it works</Link><Link to="/dashboard">Dashboard</Link></div></div><div><p className="font-semibold text-slate-200">Project technologies</p><p className="mt-2 text-slate-400">React · Node/Express configuration · MongoDB configuration · C++ queues and priority_queue</p></div></div><p className="mx-auto mt-7 max-w-7xl border-t border-slate-800 pt-5 text-xs text-slate-500">© {new Date().getFullYear()} SmartFlow. Educational project demonstration.</p></footer>;
+}

@@ -1,0 +1,1 @@
+export default function ErrorMessage({ message }) { return message ? <div role="alert" className="rounded-lg border border-amber-400/50 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{message}</div> : null; }

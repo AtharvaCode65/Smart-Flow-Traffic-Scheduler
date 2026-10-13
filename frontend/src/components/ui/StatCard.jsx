@@ -1,0 +1,2 @@
+import { motion } from 'framer-motion';
+export default function StatCard({ icon: Icon, label, value, detail }) { return <motion.article initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="surface p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-400">{label}</span><Icon className="h-5 w-5 text-blue" /></div><p className="mt-3 text-2xl font-bold text-white">{value}</p><p className="mt-1 text-xs text-slate-400">{detail}</p></motion.article>; }

@@ -1,0 +1,15 @@
+import { useForm } from 'react-hook-form';
+import { Ambulance, Plus } from 'lucide-react';
+import Button from '../ui/Button';
+import Input from '../ui/Input';
+import { LANES, VEHICLE_TYPES } from '../../constants/traffic';
+
+export default function VehicleForm({ onSubmit, loading, disabled }) {
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm({ defaultValues: { vehicleType: 'Car', laneNumber: 1, arrivalTime: 0, emergency: false } });
+  const submit = async (values, forceEmergency = false) => {
+    const vehicle = { id: Number(values.id), laneNumber: Number(values.laneNumber), type: values.vehicleType, arrivalTime: Number(values.arrivalTime), emergency: forceEmergency || values.emergency };
+    await onSubmit(vehicle);
+    reset();
+  };
+  return <section className="surface p-5"><h2 className="font-bold text-white">Add vehicle to C++ FIFO lane</h2><p className="mt-1 text-sm text-slate-400">Vehicle.h fields: ID, type, arrival time, and emergency status. Direction maps to the selected lane number.</p>{disabled && <p className="mt-2 text-sm text-amber-200">Controls are disabled while the C++ API is unavailable.</p>}<form onSubmit={handleSubmit((values) => submit(values))} className="mt-4 grid gap-4 md:grid-cols-5"><Input id="vehicleId" label="Vehicle ID" type="number" min="1" disabled={disabled} error={errors.id?.message} {...register('id', { required: 'Required', valueAsNumber: true, min: { value: 1, message: 'Must be positive' } })} /><label className="text-sm font-medium text-slate-200">Direction / lane<select disabled={disabled} className="mt-1 w-full rounded-lg border border-slate-600 bg-navy px-3 py-2" {...register('laneNumber', { valueAsNumber: true })}>{LANES.map((lane) => <option key={lane.number} value={lane.number}>{lane.name} — Lane {lane.number}</option>)}</select></label><label className="text-sm font-medium text-slate-200">Vehicle type<select disabled={disabled} className="mt-1 w-full rounded-lg border border-slate-600 bg-navy px-3 py-2" {...register('vehicleType')}>{VEHICLE_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label><Input id="arrivalTime" label="Arrival time" type="number" min="0" disabled={disabled} error={errors.arrivalTime?.message} {...register('arrivalTime', { required: 'Required', valueAsNumber: true, min: { value: 0, message: 'Cannot be negative' } })} /><div className="flex flex-col justify-end gap-2"><label className="flex items-center gap-2 text-sm text-slate-200"><input disabled={disabled} type="checkbox" {...register('emergency')} /> Emergency status</label><div className="flex gap-2"><Button className="flex-1" type="submit" loading={loading} disabled={disabled}><Plus className="h-4 w-4" />Add</Button><Button className="flex-1" type="button" variant="secondary" disabled={disabled || loading} onClick={handleSubmit((values) => { setValue('emergency', true); submit(values, true); })}><Ambulance className="h-4 w-4 text-amber-300" />Emergency</Button></div></div></form></section>;
+}
