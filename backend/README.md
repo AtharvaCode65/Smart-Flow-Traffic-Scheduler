@@ -1,6 +1,10 @@
 # SmartFlow Express + MongoDB API
 
-This Node/Express service stores SmartFlow lane, vehicle, and signal-log records in MongoDB. It does not replace or run the C++ `queue<Vehicle>` and `priority_queue` scheduler in this folder.
+`npm run dev` and `npm start` build and start the C++ scheduler on port 18080, then start the Express records API on port 5000. CMake and Visual Studio Build Tools with Desktop development with C++ must be installed. An existing scheduler on port 18080 is reused without resetting its queues.
+
+The Node/Express service stores SmartFlow lane, vehicle, and signal-log records in MongoDB. The React scheduler dashboard connects to the C++ service, which runs independently of MongoDB. If the records API cannot connect to MongoDB, the scheduler remains available.
+
+Use `npm run dev:records` to run only Express with nodemon. It watches JavaScript source files and ignores C++ build output.
 
 ## Install and run (Windows PowerShell)
 

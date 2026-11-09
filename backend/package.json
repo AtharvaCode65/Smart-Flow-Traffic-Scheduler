@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
+    "dev": "node start.js",
+    "start": "node start.js",
+    "dev:records": "nodemon server.js",
+    "start:records": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

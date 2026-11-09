@@ -1,156 +1,59 @@
 #include "TrafficScheduler.h"
-#include "crow.h"
-#include <fstream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <string>
 
+// HTTP wrapper only: priority logic remains in TrafficScheduler.cpp.
 TrafficScheduler scheduler;
 
-std::string escapeJson(const std::string& text)
-{
-    std::string escaped;
-    for (char character : text)
-    {
-        if (character == '"') escaped += "\\\"";
-        else if (character == '\\') escaped += "\\\\";
-        else escaped += character;
-    }
-    return escaped;
-}
+std::string escapeJson(const std::string& value) { std::string output; for (char c : value) { if (c == '"') output += "\\\""; else if (c == '\\') output += "\\\\"; else if (c == '\n') output += "\\n"; else output += c; } return output; }
+std::string vehicleJson(const Vehicle& v) { return "{\"id\":" + std::to_string(v.id) + ",\"type\":\"" + escapeJson(v.type) + "\",\"arrivalTime\":" + std::to_string(v.arrivalTime) + ",\"emergency\":" + (v.emergency ? "true" : "false") + "}"; }
 
-std::string vehicleToJson(const Vehicle& vehicle)
+std::string statusJson()
 {
-    return "{\"id\":" + std::to_string(vehicle.id) +
-           ",\"type\":\"" + escapeJson(vehicle.type) +
-           "\",\"arrivalTime\":" + std::to_string(vehicle.arrivalTime) +
-           ",\"emergency\":" + (vehicle.emergency ? "true" : "false") + "}";
-}
-
-std::string statusToJson()
-{
-    std::vector<LaneInfo> lanes = scheduler.getStatus();
-    std::ostringstream json;
+    std::ostringstream json; std::vector<LaneInfo> lanes = scheduler.getStatus();
     json << "{\"currentTime\":" << scheduler.getCurrentTime() << ",\"lanes\":[";
-
-    for (size_t i = 0; i < lanes.size(); i++)
-    {
-        const LaneInfo& lane = lanes[i];
-        if (i > 0) json << ',';
-        json << "{\"laneNumber\":" << lane.laneNumber
-             << ",\"queueLength\":" << lane.queueLength
-             << ",\"waitingTime\":" << lane.waitingTime
-             << ",\"hasEmergency\":" << (lane.hasEmergency ? "true" : "false")
-             << ",\"emergencyBonus\":" << lane.emergencyBonus
-             << ",\"priorityScore\":" << lane.priorityScore
-             << ",\"vehicles\":[";
-        for (size_t j = 0; j < lane.vehicles.size(); j++)
-        {
-            if (j > 0) json << ',';
-            json << vehicleToJson(lane.vehicles[j]);
-        }
-        json << "]}";
-    }
-    json << "]}";
-    return json.str();
+    for (size_t i = 0; i < lanes.size(); ++i) { const LaneInfo& lane = lanes[i]; if (i) json << ','; json << "{\"laneNumber\":" << lane.laneNumber << ",\"queueLength\":" << lane.queueLength << ",\"waitingTime\":" << lane.waitingTime << ",\"hasEmergency\":" << (lane.hasEmergency ? "true" : "false") << ",\"emergencyBonus\":" << lane.emergencyBonus << ",\"priorityScore\":" << lane.priorityScore << ",\"vehicles\":["; for (size_t j = 0; j < lane.vehicles.size(); ++j) { if (j) json << ','; json << vehicleJson(lane.vehicles[j]); } json << "]}"; }
+    json << "]}"; return json.str();
 }
 
-crow::response jsonResponse(const std::string& body, int status = 200)
+bool valueStart(const std::string& body, const std::string& key, size_t& start) { size_t keyAt = body.find("\"" + key + "\""); if (keyAt == std::string::npos) return false; size_t colon = body.find(':', keyAt); if (colon == std::string::npos) return false; start = body.find_first_not_of(" \t\r\n", colon + 1); return start != std::string::npos; }
+bool jsonInt(const std::string& body, const std::string& key, int& number) { size_t start; if (!valueStart(body, key, start)) return false; char* end = 0; long result = std::strtol(body.c_str() + start, &end, 10); if (end == body.c_str() + start) return false; number = static_cast<int>(result); return true; }
+bool jsonBool(const std::string& body, const std::string& key, bool& result) { size_t start; if (!valueStart(body, key, start)) return false; if (body.compare(start, 4, "true") == 0) { result = true; return true; } if (body.compare(start, 5, "false") == 0) { result = false; return true; } return false; }
+bool jsonString(const std::string& body, const std::string& key, std::string& result) { size_t start; if (!valueStart(body, key, start) || body[start] != '"') return false; size_t end = body.find('"', start + 1); if (end == std::string::npos) return false; result = body.substr(start + 1, end - start - 1); return true; }
+
+struct Result { int status; std::string body; };
+Result route(const std::string& method, const std::string& path, const std::string& body)
 {
-    crow::response response(status, body);
-    response.set_header("Content-Type", "application/json");
-    return response;
+    if (method == "GET" && path == "/api/status") return {200, statusJson()};
+    if (method == "POST" && path == "/api/reset") { scheduler.reset(); return {200, "{\"message\":\"Simulation reset successfully.\",\"status\":" + statusJson() + "}"}; }
+    if (method == "POST" && path == "/api/vehicles") { Vehicle vehicle; int lane; if (!jsonInt(body, "id", vehicle.id) || !jsonInt(body, "laneNumber", lane) || !jsonString(body, "type", vehicle.type) || !jsonInt(body, "arrivalTime", vehicle.arrivalTime) || !jsonBool(body, "emergency", vehicle.emergency)) return {400, "{\"error\":\"Send id, laneNumber, type, arrivalTime, and emergency.\"}"}; std::string error; if (!scheduler.addVehicle(vehicle, lane, error)) return {400, "{\"error\":\"" + escapeJson(error) + "\"}"}; return {201, "{\"message\":\"Vehicle added successfully.\",\"status\":" + statusJson() + "}"}; }
+    if (method == "POST" && path == "/api/schedule") { ScheduleResult result = scheduler.schedule(); if (!result.available) return {400, "{\"error\":\"" + escapeJson(result.message) + "\"}"}; std::ostringstream json; json << "{\"message\":\"" << escapeJson(result.message) << "\",\"selectedLane\":" << result.laneNumber << ",\"score\":" << result.score << ",\"greenTime\":" << result.greenTime << ",\"vehiclesToProcess\":" << result.vehiclesToProcess << ",\"priorityQueue\":["; for (size_t i = 0; i < result.priorityQueue.size(); ++i) { if (i) json << ','; json << "{\"laneNumber\":" << result.priorityQueue[i].laneNumber << ",\"score\":" << result.priorityQueue[i].score << '}'; } json << "],\"status\":" << statusJson() << '}'; return {200, json.str()}; }
+    if (method == "POST" && path == "/api/process") { std::string error; std::vector<Vehicle> processed = scheduler.processSelectedLane(error); if (!error.empty()) return {400, "{\"error\":\"" + escapeJson(error) + "\"}"}; std::ostringstream json; json << "{\"message\":\"Vehicles processed in FIFO order.\",\"processedVehicles\":["; for (size_t i = 0; i < processed.size(); ++i) { if (i) json << ','; json << vehicleJson(processed[i]); } json << "],\"status\":" << statusJson() << '}'; return {200, json.str()}; }
+    return {404, "{\"error\":\"Route not found.\"}"};
 }
 
-crow::response textFileResponse(const std::string& path, const std::string& contentType)
+std::string receiveAll(SOCKET client)
 {
-    std::ifstream file(path);
-    if (!file)
-    {
-        return crow::response(404, "File not found. Start the server from the build folder.");
-    }
-    std::stringstream content;
-    content << file.rdbuf();
-    crow::response response(content.str());
-    response.set_header("Content-Type", contentType);
-    return response;
+    std::string request; char buffer[4096]; size_t expected = 0;
+    while (request.size() < 1024 * 1024) { int count = recv(client, buffer, sizeof(buffer), 0); if (count <= 0) break; request.append(buffer, count); size_t headerEnd = request.find("\r\n\r\n"); if (headerEnd != std::string::npos) { size_t lengthAt = request.find("Content-Length:"); if (lengthAt != std::string::npos) expected = static_cast<size_t>(std::strtoul(request.c_str() + lengthAt + 15, 0, 10)); if (request.size() >= headerEnd + 4 + expected) break; } }
+    return request;
+}
+void reply(SOCKET client, const Result& result)
+{
+    const char* reason = result.status == 200 ? "OK" : result.status == 201 ? "Created" : result.status == 204 ? "No Content" : result.status == 400 ? "Bad Request" : "Not Found";
+    std::ostringstream text; text << "HTTP/1.1 " << result.status << ' ' << reason << "\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nContent-Length: " << result.body.size() << "\r\nConnection: close\r\n\r\n" << result.body; std::string response = text.str(); send(client, response.c_str(), static_cast<int>(response.size()), 0);
 }
 
 int main()
 {
-    crow::SimpleApp app;
-
-    // The CMake file copies frontend/ beside the executable build folder.
-    CROW_ROUTE(app, "/")([] { return textFileResponse("frontend/index.html", "text/html"); });
-    CROW_ROUTE(app, "/style.css")([] { return textFileResponse("frontend/style.css", "text/css"); });
-    CROW_ROUTE(app, "/script.js")([] { return textFileResponse("frontend/script.js", "application/javascript"); });
-
-    CROW_ROUTE(app, "/api/status").methods(crow::HTTPMethod::GET)([] {
-        return jsonResponse(statusToJson());
-    });
-
-    CROW_ROUTE(app, "/api/vehicles").methods(crow::HTTPMethod::Post)([](const crow::request& request) {
-        auto input = crow::json::load(request.body);
-        if (!input || !input.has("id") || !input.has("laneNumber") || !input.has("type") ||
-            !input.has("arrivalTime") || !input.has("emergency"))
-        {
-            return jsonResponse("{\"error\":\"Send id, laneNumber, type, arrivalTime, and emergency.\"}", 400);
-        }
-
-        Vehicle vehicle{input["id"].i(), input["type"].s(), input["arrivalTime"].i(), input["emergency"].b()};
-        std::string error;
-        if (!scheduler.addVehicle(vehicle, input["laneNumber"].i(), error))
-        {
-            return jsonResponse("{\"error\":\"" + escapeJson(error) + "\"}", 400);
-        }
-        return jsonResponse("{\"message\":\"Vehicle added successfully.\",\"status\":" + statusToJson() + "}", 201);
-    });
-
-    CROW_ROUTE(app, "/api/schedule").methods(crow::HTTPMethod::Post)([] {
-        ScheduleResult result = scheduler.schedule();
-        if (!result.available)
-        {
-            return jsonResponse("{\"error\":\"" + result.message + "\"}", 400);
-        }
-        std::ostringstream json;
-        json << "{\"message\":\"" << result.message << "\",\"selectedLane\":" <<
-            std::to_string(result.laneNumber) + ",\"score\":" + std::to_string(result.score) +
-            ",\"greenTime\":" + std::to_string(result.greenTime) + ",\"vehiclesToProcess\":" +
-            std::to_string(result.vehiclesToProcess) + ",\"priorityQueue\":[";
-        for (size_t i = 0; i < result.priorityQueue.size(); i++)
-        {
-            if (i > 0) json << ',';
-            json << "{\"laneNumber\":" << result.priorityQueue[i].laneNumber
-                 << ",\"score\":" << result.priorityQueue[i].score << '}';
-        }
-        json << "],\"status\":" << statusToJson() << '}';
-        return jsonResponse(json.str());
-    });
-
-    CROW_ROUTE(app, "/api/process").methods(crow::HTTPMethod::Post)([] {
-        std::string error;
-        std::vector<Vehicle> processed = scheduler.processSelectedLane(error);
-        if (!error.empty())
-        {
-            return jsonResponse("{\"error\":\"" + escapeJson(error) + "\"}", 400);
-        }
-        std::ostringstream json;
-        json << "{\"message\":\"Vehicles processed in FIFO order.\",\"processedVehicles\":[";
-        for (size_t i = 0; i < processed.size(); i++)
-        {
-            if (i > 0) json << ',';
-            json << vehicleToJson(processed[i]);
-        }
-        json << "],\"status\":" << statusToJson() << '}';
-        return jsonResponse(json.str());
-    });
-
-    CROW_ROUTE(app, "/api/reset").methods(crow::HTTPMethod::Post)([] {
-        scheduler.reset();
-        return jsonResponse("{\"message\":\"Simulation reset successfully.\",\"status\":" + statusToJson() + "}");
-    });
-
-    std::cout << "Smart Flow server: http://localhost:18080\n";
-    // One scheduler object is shared by all requests, so a single-threaded
-    // server keeps this beginner project simple and avoids concurrent queue access.
-    app.port(18080).run();
+    WSADATA data; if (WSAStartup(MAKEWORD(2, 2), &data) != 0) { std::cerr << "Winsock startup failed.\n"; return 1; }
+    SOCKET server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); if (server == INVALID_SOCKET) { WSACleanup(); return 1; }
+    sockaddr_in address = {}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_ANY); address.sin_port = htons(18080);
+    if (bind(server, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == SOCKET_ERROR || listen(server, SOMAXCONN) == SOCKET_ERROR) { std::cerr << "Cannot listen on port 18080.\n"; closesocket(server); WSACleanup(); return 1; }
+    std::cout << "Smart Flow C++ scheduler API: http://localhost:18080\n";
+    while (true) { SOCKET client = accept(server, 0, 0); if (client == INVALID_SOCKET) continue; std::string request = receiveAll(client); size_t lineEnd = request.find("\r\n"); std::istringstream line(request.substr(0, lineEnd)); std::string method, path; line >> method >> path; if (method == "OPTIONS") reply(client, {204, ""}); else { size_t bodyAt = request.find("\r\n\r\n"); reply(client, route(method, path, bodyAt == std::string::npos ? "" : request.substr(bodyAt + 4))); } closesocket(client); }
 }
